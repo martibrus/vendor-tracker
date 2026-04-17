@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { subscribeVendors, saveVendor, removeVendor } from "./firebase.js";
 
-const STATUSES1 = ["Conclusa", "Programmata", "Da Programmare"];
-const STATUSES2 = ["Conclusa", "Programmata", "Da Programmare", "Non necessaria"];
+const STATUSES1 = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare"];
+const STATUSES2 = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare", "Non necessaria"];
 const PARTS = ["BRM", "CEG", "PAS", "SAP", "GAV"];
 const STEPS = [
   { key: "step1", label: "Step 1 – Call conoscitiva", short: "Step 1", sts: STATUSES1 },
@@ -15,6 +15,7 @@ const gid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const SC = {
   "Conclusa": { bg: "#D1FAE5", fg: "#065F46", bar: "#10B981" },
   "Programmata": { bg: "#DBEAFE", fg: "#1E40AF", bar: "#3B82F6" },
+  "Slot da confermare": { bg: "#BFDBFE", fg: "#1E3A8A", bar: "#2563EB" },
   "Da Programmare": { bg: "#FEF3C7", fg: "#92400E", bar: "#F59E0B" },
   "Non necessaria": { bg: "#F1F5F9", fg: "#64748B", bar: "#CBD5E1" },
 };
@@ -319,19 +320,19 @@ function VendorList({ vendors, onEdit, expanded, setExpanded, notifs, goSched })
 function GanttDash({ vendors }) {
   if (!vendors.length) return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "50vh", textAlign: "center" }}><div style={{ fontSize: 52, marginBottom: 16 }}>📊</div><h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Nessun dato</h2></div>;
   const tot = vendors.length * 4;
-  const c = { a: 0, b: 0, c: 0, d: 0 };
-  vendors.forEach(v => STEPS.forEach(s => { const st = v[s.key].status; if (st === "Conclusa") c.a++; else if (st === "Programmata") c.b++; else if (st === "Da Programmare") c.c++; else c.d++; }));
+  const c = { a: 0, b: 0, e: 0, c: 0, d: 0 };
+  vendors.forEach(v => STEPS.forEach(s => { const st = v[s.key].status; if (st === "Conclusa") c.a++; else if (st === "Programmata") c.b++; else if (st === "Slot da confermare") c.e++; else if (st === "Da Programmare") c.c++; else c.d++; }));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-        {[{ l: "Concluse", n: c.a, co: "#10B981", i: "✅" }, { l: "Programmate", n: c.b, co: "#3B82F6", i: "📅" }, { l: "Da Programmare", n: c.c, co: "#F59E0B", i: "⏳" }, { l: "Non necessarie", n: c.d, co: "#94A3B8", i: "➖" }].map((x, i) => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12 }}>
+        {[{ l: "Concluse", n: c.a, co: "#10B981", i: "✅" }, { l: "Programmate", n: c.b, co: "#3B82F6", i: "📅" }, { l: "Slot da conf.", n: c.e, co: "#2563EB", i: "🔵" }, { l: "Da Programmare", n: c.c, co: "#F59E0B", i: "⏳" }, { l: "Non necessarie", n: c.d, co: "#94A3B8", i: "➖" }].map((x, i) => (
           <div key={i} style={{ background: "white", borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 14, border: "1px solid #E2E8F0", borderLeft: "4px solid " + x.co }}><div style={{ fontSize: 24 }}>{x.i}</div><div><div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{x.n}<span style={{ fontSize: 14, color: "#94A3B8", fontWeight: 400 }}>/{tot}</span></div><div style={{ fontSize: 13, color: "#64748B" }}>{x.l}</div></div></div>
         ))}
       </div>
       <div style={panel}><h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700 }}>Avanzamento per Vendor</h3>
         {vendors.map((v, i) => { const done = STEPS.filter(s => v[s.key].status === "Conclusa" || v[s.key].status === "Non necessaria").length; const pct = Math.round((done / 4) * 100); return <div key={v.id} style={{ display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #F8FAFC", gap: 8 }}>
           <div style={{ width: 160, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 28, height: 28, borderRadius: 7, background: "#6366F1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{v.name.charAt(0).toUpperCase()}</div><span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</span></div>
-          {STEPS.map(s => { const st = v[s.key].status; const sc = SC[st]; return <div key={s.key} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", height: 32, background: "#F8FAFC", borderRadius: 6, overflow: "hidden" }}><div style={{ position: "absolute", left: 0, top: 0, height: "100%", borderRadius: 6, background: sc.bar, opacity: st === "Non necessaria" ? .3 : 1, width: st === "Conclusa" ? "100%" : st === "Programmata" ? "60%" : st === "Da Programmare" ? "20%" : "100%", transition: "width 0.5s" }} /><span style={{ fontSize: 11, color: sc.fg, fontWeight: 500, position: "relative", zIndex: 1 }}>{st === "Non necessaria" ? "N/A" : st.substring(0, 4)}</span></div>; })}
+          {STEPS.map(s => { const st = v[s.key].status; const sc = SC[st]; return <div key={s.key} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", height: 32, background: "#F8FAFC", borderRadius: 6, overflow: "hidden" }}><div style={{ position: "absolute", left: 0, top: 0, height: "100%", borderRadius: 6, background: sc.bar, opacity: st === "Non necessaria" ? .3 : 1, width: st === "Conclusa" ? "100%" : st === "Programmata" ? "60%" : st === "Slot da confermare" ? "40%" : st === "Da Programmare" ? "20%" : "100%", transition: "width 0.5s" }} /><span style={{ fontSize: 11, color: sc.fg, fontWeight: 500, position: "relative", zIndex: 1 }}>{st === "Non necessaria" ? "N/A" : st === "Slot da confermare" ? "Slot" : st.substring(0, 4)}</span></div>; })}
           <div style={{ width: 50, textAlign: "right" }}><span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 100, background: pct === 100 ? "#D1FAE5" : pct >= 50 ? "#DBEAFE" : "#FEF3C7", color: pct === 100 ? "#065F46" : pct >= 50 ? "#1E40AF" : "#92400E" }}>{pct}%</span></div>
         </div>; })}
       </div>
