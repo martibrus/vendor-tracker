@@ -1,10 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
-
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  ISTRUZIONI: Sostituisci i valori sotto con quelli del      ║
-// ║  tuo progetto Firebase (vedi README.md per la guida)        ║
-// ╚══════════════════════════════════════════════════════════════╝
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBFGAz8Qw8cU-t724D0uEueHfV_mcxgzGY",
@@ -18,26 +13,31 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-export const vendorsCol = collection(db, "vendors");
-
-// Ascolta i cambiamenti in tempo reale
+// ── VENDORS ──
 export function subscribeVendors(callback) {
-  return onSnapshot(vendorsCol, (snapshot) => {
-    const vendors = [];
-    snapshot.forEach((doc) => {
-      vendors.push({ id: doc.id, ...doc.data() });
-    });
-    callback(vendors);
+  return onSnapshot(collection(db, "vendors"), (snap) => {
+    const arr = []; snap.forEach(d => arr.push({ id: d.id, ...d.data() })); callback(arr);
   });
 }
+export async function saveVendor(v) { const { id, ...data } = v; await setDoc(doc(db, "vendors", id), data); }
+export async function removeVendor(id) { await deleteDoc(doc(db, "vendors", id)); }
 
-// Salva/aggiorna un vendor
-export async function saveVendor(vendor) {
-  const { id, ...data } = vendor;
-  await setDoc(doc(db, "vendors", id), data);
+// ── GANTT TASKS ──
+export function subscribeGantt(callback) {
+  return onSnapshot(collection(db, "gantt_tasks"), (snap) => {
+    const arr = []; snap.forEach(d => arr.push({ id: d.id, ...d.data() })); callback(arr);
+  });
 }
+export async function saveGanttTask(t) { const { id, ...data } = t; await setDoc(doc(db, "gantt_tasks", id), data); }
+export async function removeGanttTask(id) { await deleteDoc(doc(db, "gantt_tasks", id)); }
 
-// Elimina un vendor
-export async function removeVendor(id) {
-  await deleteDoc(doc(db, "vendors", id));
+// ── SETTINGS (tab visibility) ──
+export function subscribeSettings(callback) {
+  return onSnapshot(doc(db, "settings", "tab_visibility"), (snap) => {
+    if (snap.exists()) callback(snap.data());
+    else callback({ vendors: true, gantt: true, timeline: true, slots: true });
+  });
+}
+export async function saveSettings(data) {
+  await setDoc(doc(db, "settings", "tab_visibility"), data);
 }
