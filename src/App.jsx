@@ -132,7 +132,7 @@ export default function App() {
   vendors.forEach(v => {
     fix(v.slots).forEach(s => {
       const so = STEPS.find(st => st.key === s.step);
-      const tg = (v[s.step]?.participants?.length > 0) ? v[s.step].participants : PARTS;
+      const tg = (v[s.step]?.participants?.length > 0) ? v[s.step].participants : [];
       tg.forEach(p => {
         if (!s.responses[p]) {
           notifs.push({ vid: v.id, vn: v.name, sl: so?.label || s.step, who: p, date: s.date, time: s.time });
@@ -372,9 +372,11 @@ function Scheduling({ vendors, initVid, clearInit, addSlot, rmSlot, setResp, add
             {slots.map(s => {
               const sLabel = STEPS.find(st => st.key === s.step)?.label || s.step;
               const resp = s.responses || {};
-              const yC = Object.values(resp).filter(r => r === "yes").length;
-              const nC = Object.values(resp).filter(r => r === "no").length;
-              const pC = PARTS.length - Object.keys(resp).length;
+              // Solo i partecipanti assegnati a questo step nel tab Vendor
+              const stepParts = (vendor[s.step]?.participants?.length > 0) ? vendor[s.step].participants : [];
+              const yC = stepParts.filter(p => resp[p] === "yes").length;
+              const nC = stepParts.filter(p => resp[p] === "no").length;
+              const pC = stepParts.filter(p => !resp[p]).length;
               return (
                 <div key={s.id} style={{ borderRadius: 14, border: "1px solid #E2E8F0", overflow: "hidden" }}>
                   <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", background: "linear-gradient(135deg,#EFF6FF,#F0F9FF)", borderBottom: "2px solid #DBEAFE", gap: 12 }}>
@@ -393,10 +395,15 @@ function Scheduling({ vendors, initVid, clearInit, addSlot, rmSlot, setResp, add
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", textAlign: "center" }}>Non disp.</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", textAlign: "center" }}>Stato</span>
                     </div>
-                    {PARTS.map((p, pi) => {
+                    {stepParts.length === 0 && (
+                      <div style={{ padding: "20px", textAlign: "center", color: "#94A3B8", fontSize: 13 }}>
+                        ⚠️ Nessun partecipante assegnato a questo step. Vai nel tab <strong>Vendor</strong> → modifica il vendor → assegna i partecipanti allo step corrispondente.
+                      </div>
+                    )}
+                    {stepParts.map((p, pi) => {
                       const val = resp[p];
                       return (
-                        <div key={p} style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr 120px", alignItems: "center", padding: "12px 20px", borderBottom: pi < 4 ? "1px solid #F8FAFC" : "none", background: val === "yes" ? "#F0FDF4" : val === "no" ? "#FFF5F5" : "white" }}>
+                        <div key={p} style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr 120px", alignItems: "center", padding: "12px 20px", borderBottom: pi < stepParts.length - 1 ? "1px solid #F8FAFC" : "none", background: val === "yes" ? "#F0FDF4" : val === "no" ? "#FFF5F5" : "white" }}>
                           <span style={{ fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 100, background: PC[p].bg, color: PC[p].fg, justifySelf: "start" }}>{p}</span>
                           <div style={{ display: "flex", justifyContent: "center" }}><button onClick={() => setResp(vendor.id, s.id, p, "yes")} style={{ padding: "10px 24px", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", border: val === "yes" ? "2px solid #059669" : "1.5px solid #E2E8F0", background: val === "yes" ? "#D1FAE5" : "white", color: val === "yes" ? "#059669" : "#94A3B8" }}>✓ Sì</button></div>
                           <div style={{ display: "flex", justifyContent: "center" }}><button onClick={() => setResp(vendor.id, s.id, p, "no")} style={{ padding: "10px 24px", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", border: val === "no" ? "2px solid #DC2626" : "1.5px solid #E2E8F0", background: val === "no" ? "#FEE2E2" : "white", color: val === "no" ? "#DC2626" : "#94A3B8" }}>✗ No</button></div>
