@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc } from "firebase/firestore";
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, addDoc, query, orderBy, limit } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBFGAz8Qw8cU-t724D0uEueHfV_mcxgzGY",
@@ -14,30 +14,44 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // ── VENDORS ──
-export function subscribeVendors(callback) {
-  return onSnapshot(collection(db, "vendors"), (snap) => {
-    const arr = []; snap.forEach(d => arr.push({ id: d.id, ...d.data() })); callback(arr);
-  });
+export function subscribeVendors(cb) {
+  return onSnapshot(collection(db, "vendors"), (s) => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); cb(a); });
 }
-export async function saveVendor(v) { const { id, ...data } = v; await setDoc(doc(db, "vendors", id), data); }
+export async function saveVendor(v) { const { id, ...d } = v; await setDoc(doc(db, "vendors", id), d); }
 export async function removeVendor(id) { await deleteDoc(doc(db, "vendors", id)); }
 
 // ── GANTT TASKS ──
-export function subscribeGantt(callback) {
-  return onSnapshot(collection(db, "gantt_tasks"), (snap) => {
-    const arr = []; snap.forEach(d => arr.push({ id: d.id, ...d.data() })); callback(arr);
-  });
+export function subscribeGantt(cb) {
+  return onSnapshot(collection(db, "gantt_tasks"), (s) => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); cb(a); });
 }
-export async function saveGanttTask(t) { const { id, ...data } = t; await setDoc(doc(db, "gantt_tasks", id), data); }
+export async function saveGanttTask(t) { const { id, ...d } = t; await setDoc(doc(db, "gantt_tasks", id), d); }
 export async function removeGanttTask(id) { await deleteDoc(doc(db, "gantt_tasks", id)); }
 
-// ── SETTINGS (tab visibility) ──
-export function subscribeSettings(callback) {
-  return onSnapshot(doc(db, "settings", "tab_visibility"), (snap) => {
-    if (snap.exists()) callback(snap.data());
-    else callback({ vendors: true, gantt: true, timeline: true, slots: true });
+// ── SETTINGS ──
+export function subscribeSettings(cb) {
+  return onSnapshot(doc(db, "settings", "tab_visibility"), (s) => {
+    cb(s.exists() ? s.data() : { vendors: true, gantt: true, timeline: true, slots: true });
   });
 }
-export async function saveSettings(data) {
-  await setDoc(doc(db, "settings", "tab_visibility"), data);
+export async function saveSettings(d) { await setDoc(doc(db, "settings", "tab_visibility"), d); }
+
+// ── ACTIVITY LOG ──
+const logsCol = collection(db, "activity_logs");
+
+export async function logActivity(user, action, details) {
+  try {
+    await addDoc(logsCol, {
+      user,
+      action,
+      details: details || "",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) { console.error("Log error:", e); }
+}
+
+export function subscribeLogs(cb, maxItems = 100) {
+  const q = query(logsCol, orderBy("timestamp", "desc"), limit(maxItems));
+  return onSnapshot(q, (s) => {
+    const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); cb(a);
+  });
 }
