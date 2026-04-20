@@ -416,7 +416,12 @@ function Scheduling({vendors,initVid,clearInit,addSlot,rmSlot,setResp}){
       {shownVendors.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}><p style={{ fontSize: 14 }}>Seleziona almeno un vendor.</p></div>}
 
       {shownVendors.map(vendor => {
-        const slots = fix(vendor.slots);
+        const activeSteps = STEPS.filter(s => vendor[s.key].status !== "Conclusa" && vendor[s.key].status !== "Non necessaria");
+        const slots = fix(vendor.slots).filter(s => {
+          const st = vendor[s.step]?.status;
+          return st !== "Conclusa" && st !== "Non necessaria";
+        });
+        const firstActiveStep = activeSteps[0]?.key || "step1";
         return (
           <div key={vendor.id} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Vendor header */}
@@ -424,15 +429,16 @@ function Scheduling({vendors,initVid,clearInit,addSlot,rmSlot,setResp}){
               <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg,#6366F1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 14 }}>{vendor.name.charAt(0).toUpperCase()}</div>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{vendor.name}</h3>
               <span style={{ fontSize: 12, color: "#94A3B8" }}>{slots.length} slot</span>
+              {activeSteps.length === 0 && <span style={{ fontSize: 11, background: "#D1FAE5", color: "#065F46", padding: "3px 10px", borderRadius: 100, fontWeight: 700 }}>✅ Tutti gli step completati</span>}
             </div>
 
-            {/* Add slot */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10, border: "1px dashed #CBD5E1" }}>
+            {/* Add slot — only if there are active steps */}
+            {activeSteps.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px", background: "#F8FAFC", borderRadius: 10, border: "1px dashed #CBD5E1" }}>
               <input type="date" style={{ ...inp, flex: "1 1 130px" }} value={ns.vendorId === vendor.id ? ns.date : ""} onChange={e => setNs({ ...ns, date: e.target.value, vendorId: vendor.id })} />
               <input type="time" style={{ ...inp, flex: "1 1 100px" }} value={ns.vendorId === vendor.id ? ns.time : ""} onChange={e => setNs({ ...ns, time: e.target.value, vendorId: vendor.id })} />
-              <select style={{ ...inp, flex: "1 1 120px" }} value={ns.vendorId === vendor.id ? ns.step : "step1"} onChange={e => setNs({ ...ns, step: e.target.value, vendorId: vendor.id })}>{STEPS.map(s => <option key={s.key} value={s.key}>{s.short}</option>)}</select>
-              <button style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: "#3B82F6", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }} onClick={() => { if (!ns.date || !ns.time || ns.vendorId !== vendor.id) return; addSlot(vendor.id, { date: ns.date, time: ns.time, step: ns.step }); setNs({ date: "", time: "", step: "step1", vendorId: vendor.id }); }}>+ Aggiungi</button>
-            </div>
+              <select style={{ ...inp, flex: "1 1 120px" }} value={ns.vendorId === vendor.id ? ns.step : firstActiveStep} onChange={e => setNs({ ...ns, step: e.target.value, vendorId: vendor.id })}>{activeSteps.map(s => <option key={s.key} value={s.key}>{s.short}</option>)}</select>
+              <button style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: "#3B82F6", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }} onClick={() => { if (!ns.date || !ns.time || ns.vendorId !== vendor.id) return; addSlot(vendor.id, { date: ns.date, time: ns.time, step: ns.step || firstActiveStep }); setNs({ date: "", time: "", step: firstActiveStep, vendorId: vendor.id }); }}>+ Aggiungi</button>
+            </div>}
 
             {/* Slots */}
             {slots.length === 0 && <p style={{ color: "#94A3B8", fontSize: 13, textAlign: "center", padding: 12 }}>Nessuno slot proposto.</p>}
