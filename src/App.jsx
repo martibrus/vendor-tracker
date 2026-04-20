@@ -29,6 +29,8 @@ const lb={fontSize:12,fontWeight:600,color:"#64748B",textTransform:"uppercase",l
 const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:14,outline:"none",fontFamily:"inherit",background:"white",width:"100%",boxSizing:"border-box"};
 const pnl={background:"white",borderRadius:14,padding:20,border:"1px solid #E2E8F0"};
 const ACTION_ICONS={"preferenza":"🗳️","vendor_creato":"➕","vendor_modificato":"✏️","vendor_eliminato":"🗑️","slot_aggiunto":"📅","slot_rimosso":"❌","disponibilita_aggiunta":"🕐","disponibilita_rimossa":"🕐","gantt_creato":"📐","gantt_modificato":"📐","gantt_eliminato":"🗑️","tab_modificati":"⚙️","login":"🔑"};
+const STATUS_ICONS = { "Conclusa": "✅", "Programmata": "📅", "Slot da confermare": "🔵", "Da Programmare": "⏳", "Non necessaria": "➖" };
+const ALL_STATUSES = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare", "Non necessaria"];
 
 export default function App(){
   const [currentUser,setCurrentUser]=useState(()=>{try{return localStorage.getItem("vt_user")||null}catch{return null}});
@@ -97,6 +99,9 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
   const [showSteps, setShowSteps] = useState(() => {
     const m = {}; STEPS.forEach(s => { m[s.key] = true; }); return m;
   });
+  const [showStatus, setShowStatus] = useState(() => {
+    const m = {}; ALL_STATUSES.forEach(st => { m[st] = st !== "Non necessaria"; }); return m;
+  });
   const [showGantt, setShowGantt] = useState(true);
 
   // Keep vendor filters in sync if new vendors appear
@@ -118,7 +123,25 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
       fix(v.slots).forEach(s => {
         if (!showSteps[s.step]) return;
         const step = STEPS.find(st => st.key === s.step);
-        ev.push({ date: s.date, type: "slot", vendor: v.name, label: step?.short || s.step, stepKey: s.step, color: step?.color || "#3B82F6", bg: step?.bg || "#DBEAFE", time: s.time, status: v[s.step]?.status || "", participants: v[s.step]?.participants || [] });
+        const status = v[s.step]?.status || "Da Programmare";
+        if (!showStatus[status]) return;
+        const sc = SC[status] || SC["Da Programmare"];
+        ev.push({
+          date: s.date,
+          type: "slot",
+          vendor: v.name,
+          label: step?.short || s.step,
+          stepKey: s.step,
+          stepColor: step?.color || "#3B82F6",
+          stepBg: step?.bg || "#DBEAFE",
+          color: sc.fg,
+          bg: sc.bg,
+          barColor: sc.bar,
+          time: s.time,
+          status,
+          statusIcon: STATUS_ICONS[status] || "",
+          participants: v[s.step]?.participants || []
+        });
       });
     });
     if (showGantt) {
@@ -131,7 +154,7 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
       });
     }
     return ev;
-  }, [vendors, ganttTasks, showVendors, showSteps, showGantt]);
+  }, [vendors, ganttTasks, showVendors, showSteps, showStatus, showGantt]);
 
   const firstDay = new Date(month.year, month.month, 1);
   const lastDay = new Date(month.year, month.month + 1, 0);
@@ -148,6 +171,7 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
 
   function toggleAllVendors(val) { const m = {}; vendors.forEach(v => { m[v.id] = val; }); setShowVendors(m); }
   function toggleAllSteps(val) { const m = {}; STEPS.forEach(s => { m[s.key] = val; }); setShowSteps(m); }
+  function toggleAllStatus(val) { const m = {}; ALL_STATUSES.forEach(st => { m[st] = val; }); setShowStatus(m); }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -191,6 +215,27 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
             ))}
           </div>
 
+          {/* Status filter */}
+          <div style={pnl}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#334155" }}>🎯 Stato</h4>
+              {isAdmin && <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => toggleAllStatus(true)} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, border: "1px solid #E2E8F0", background: "white", cursor: "pointer", color: "#10B981", fontWeight: 600 }}>Tutti</button>
+                <button onClick={() => toggleAllStatus(false)} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, border: "1px solid #E2E8F0", background: "white", cursor: "pointer", color: "#EF4444", fontWeight: 600 }}>Nessuno</button>
+              </div>}
+            </div>
+            {ALL_STATUSES.map(st => {
+              const sc = SC[st];
+              return (
+                <label key={st} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: isAdmin ? "pointer" : "default", fontSize: 13, color: showStatus[st] ? "#0F172A" : "#CBD5E1" }}>
+                  <input type="checkbox" checked={!!showStatus[st]} onChange={() => isAdmin && setShowStatus(p => ({ ...p, [st]: !p[st] }))} disabled={!isAdmin} style={{ accentColor: sc.bar, cursor: isAdmin ? "pointer" : "default" }} />
+                  <span style={{ fontSize: 13 }}>{STATUS_ICONS[st]}</span>
+                  <span style={{ fontWeight: 600, fontSize: 12 }}>{st}</span>
+                </label>
+              );
+            })}
+          </div>
+
           {/* Gantt filter */}
           <div style={pnl}>
             <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#334155" }}>📐 Attività Gantt</h4>
@@ -230,7 +275,16 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
                         <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "white" : isWe ? "#CBD5E1" : "#334155", background: isToday ? "#3B82F6" : "transparent", width: isToday ? 26 : "auto", height: isToday ? 26 : "auto", borderRadius: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</span>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        {dayEvents.slice(0, 3).map((ev, i) => <div key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 4px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "3px solid " + ev.color }}>{ev.type === "slot" ? ev.vendor : ev.label}</div>)}
+                        {dayEvents.slice(0, 3).map((ev, i) => (
+                          <div key={i} title={ev.type === "slot" ? ev.vendor + " · " + ev.label + " · " + ev.status : ev.label} style={{ fontSize: 10, fontWeight: 600, padding: "2px 4px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "3px solid " + (ev.type === "slot" ? ev.barColor : ev.color), display: "flex", alignItems: "center", gap: 3, opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.5 : 1, textDecoration: ev.type === "slot" && ev.status === "Conclusa" ? "line-through" : "none" }}>
+                            {ev.type === "slot" && <>
+                              <span style={{ fontSize: 9 }}>{ev.statusIcon}</span>
+                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: ev.stepColor, flexShrink: 0 }} />
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.vendor}</span>
+                            </>}
+                            {ev.type === "gantt" && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.label}</span>}
+                          </div>
+                        ))}
                         {dayEvents.length > 3 && <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, paddingLeft: 4 }}>+{dayEvents.length - 3}</span>}
                       </div>
                     </>}
@@ -247,11 +301,16 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
             <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700 }}>{selectedDay} {MONTHS_IT[month.month]} {month.year}</h3>
             {selectedEvents.length === 0 && <p style={{ color: "#94A3B8", fontSize: 14, textAlign: "center", padding: 20 }}>Nessuna attività.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {selectedEvents.map((ev, i) => <div key={i} style={{ padding: "12px 14px", borderRadius: 10, background: ev.bg, borderLeft: "4px solid " + ev.color }}>
+              {selectedEvents.map((ev, i) => <div key={i} style={{ padding: "12px 14px", borderRadius: 10, background: ev.bg, borderLeft: "4px solid " + (ev.type === "slot" ? ev.barColor : ev.color), opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.65 : 1 }}>
                 {ev.type === "slot" ? <>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: ev.color }}>{ev.vendor}</div>
-                  <div style={{ fontSize: 13, color: "#334155", marginTop: 2 }}>{ev.label} · {ev.time}</div>
-                  <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Stato: <strong>{ev.status}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ev.color, textDecoration: ev.status === "Conclusa" ? "line-through" : "none" }}>{ev.vendor}</div>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 100, background: ev.barColor, color: "white", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>{ev.statusIcon} {ev.status}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#334155", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: ev.stepColor, flexShrink: 0 }} />
+                    <span>{ev.label} · {ev.time}</span>
+                  </div>
                   {ev.participants.length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>{ev.participants.map(p => <span key={p} style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 100, background: PC[p]?.bg || "#F1F5F9", color: PC[p]?.fg || "#64748B" }}>{p}</span>)}</div>}
                 </> : <>
                   <div style={{ fontSize: 14, fontWeight: 700, color: ev.color }}>{ev.label}</div>
