@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { subscribeVendors, saveVendor, removeVendor, subscribeGantt, saveGanttTask, removeGanttTask, subscribeSettings, saveSettings, logActivity, subscribeLogs, deleteLog, clearAllLogs } from "./firebase.js";
+import { subscribeVendors, saveVendor, removeVendor, subscribeGantt, saveGanttTask, removeGanttTask, subscribeSettings, saveSettings, logActivity, subscribeLogs, deleteLog, clearAllLogs, subscribeCalendarEvents, saveCalendarEvent, removeCalendarEvent } from "./firebase.js";
 
 const STATUSES1 = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare"];
 const STATUSES2 = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare", "Non necessaria"];
@@ -28,13 +28,14 @@ function timeAgo(iso){const diff=Date.now()-new Date(iso).getTime();const m=Math
 const lb={fontSize:12,fontWeight:600,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.5px"};
 const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:14,outline:"none",fontFamily:"inherit",background:"white",width:"100%",boxSizing:"border-box"};
 const pnl={background:"white",borderRadius:14,padding:20,border:"1px solid #E2E8F0"};
-const ACTION_ICONS={"preferenza":"🗳️","vendor_creato":"➕","vendor_modificato":"✏️","vendor_eliminato":"🗑️","slot_aggiunto":"📅","slot_rimosso":"❌","disponibilita_aggiunta":"🕐","disponibilita_rimossa":"🕐","gantt_creato":"📐","gantt_modificato":"📐","gantt_eliminato":"🗑️","tab_modificati":"⚙️","login":"🔑"};
+const ACTION_ICONS={"preferenza":"🗳️","vendor_creato":"➕","vendor_modificato":"✏️","vendor_eliminato":"🗑️","slot_aggiunto":"📅","slot_rimosso":"❌","disponibilita_aggiunta":"🕐","disponibilita_rimossa":"🕐","gantt_creato":"📐","gantt_modificato":"📐","gantt_eliminato":"🗑️","tab_modificati":"⚙️","login":"🔑","evento_creato":"📌","evento_modificato":"📌","evento_eliminato":"🗑️"};
 const STATUS_ICONS = { "Conclusa": "✅", "Programmata": "📅", "Slot da confermare": "🔵", "Da Programmare": "⏳", "Non necessaria": "➖" };
 const ALL_STATUSES = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare", "Non necessaria"];
 
 export default function App(){
   const [currentUser,setCurrentUser]=useState(()=>{try{return localStorage.getItem("vt_user")||null}catch{return null}});
   const [vendors,setVendors]=useState([]);const [ganttTasks,setGanttTasks]=useState([]);
+  const [calendarEvents,setCalendarEvents]=useState([]);
   const [tabVis,setTabVis]=useState({vendors:true,gantt:true,calendar:true,timeline:true,slots:true});
   const [logs,setLogs]=useState([]);const [loading,setLoading]=useState(true);
   const [view,setView]=useState("vendors");const [formVendor,setFormVendor]=useState(null);
@@ -43,7 +44,9 @@ export default function App(){
   useEffect(()=>{try{
     const u1=subscribeVendors(d=>{setVendors(d.map(v=>({...v,slots:fix(v.slots),availability:v.availability||[]}))); setLoading(false);});
     const u2=subscribeGantt(d=>setGanttTasks(d));const u3=subscribeSettings(d=>setTabVis(p=>({...p,...d})));
-    const u4=subscribeLogs(d=>setLogs(d),200);return()=>{u1();u2();u3();u4();};
+    const u4=subscribeLogs(d=>setLogs(d),200);
+    const u5=subscribeCalendarEvents(d=>setCalendarEvents(d));
+    return()=>{u1();u2();u3();u4();u5();};
   }catch{setLoading(false);}},[]);
 
   function selectUser(u){setCurrentUser(u);try{localStorage.setItem("vt_user",u)}catch{} logActivity(u,"login",u+" ha effettuato l'accesso");}
@@ -79,7 +82,7 @@ export default function App(){
     <div style={{maxWidth:1200,margin:"0 auto",padding:"24px 28px"}}>
       {view==="vendors"&&<VendorList vendors={vendors} onEdit={v=>setFormVendor(JSON.parse(JSON.stringify(v)))} expanded={expanded} setExpanded={setExpanded} notifs={notifs} goS={goS}/>}
       {view==="gantt"&&<GanttDash vendors={vendors}/>}
-      {view==="calendar"&&<CalendarView vendors={vendors} ganttTasks={ganttTasks} isAdmin={isAdmin}/>}
+      {view==="calendar"&&<CalendarView vendors={vendors} ganttTasks={ganttTasks} calendarEvents={calendarEvents} currentUser={currentUser} isAdmin={isAdmin}/>}
       {view==="timeline"&&<GanttTimeline tasks={ganttTasks} vendors={vendors} currentUser={currentUser}/>}
       {view==="slots"&&<Scheduling vendors={vendors} initVid={schedVid} clearInit={()=>setSchedVid(null)} addSlot={addSlot} rmSlot={rmSlot} setResp={setResp}/>}
     </div>
@@ -89,9 +92,10 @@ export default function App(){
 }
 
 // ===================== CALENDAR VIEW =====================
-function CalendarView({ vendors, ganttTasks, isAdmin }) {
+function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmin }) {
   const [month, setMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
   const [selectedDay, setSelectedDay] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
   // Filter states — admin controls what's visible
   const [showVendors, setShowVendors] = useState(() => {
     const m = {}; vendors.forEach(v => { m[v.id] = true; }); return m;
@@ -103,6 +107,7 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
     const m = {}; ALL_STATUSES.forEach(st => { m[st] = st !== "Non necessaria"; }); return m;
   });
   const [showGantt, setShowGantt] = useState(true);
+  const [showEvents, setShowEvents] = useState(true);
 
   // Keep vendor filters in sync if new vendors appear
   useEffect(() => {
@@ -153,8 +158,33 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
         }
       });
     }
+    if (showEvents && calendarEvents) {
+      calendarEvents.forEach(e => {
+        if (!e.date) return;
+        const startStr = e.date;
+        const endStr = e.endDate || e.date;
+        const sd = new Date(startStr), ed = new Date(endStr);
+        if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return;
+        for (let d = new Date(sd); d <= ed; d.setDate(d.getDate() + 1)) {
+          const ds = d.toISOString().slice(0, 10);
+          ev.push({
+            date: ds,
+            type: "event",
+            eventId: e.id,
+            title: e.title || "(senza titolo)",
+            time: e.time || "",
+            description: e.description || "",
+            color: e.color || "#EC4899",
+            bg: (e.color || "#EC4899") + "22",
+            isStart: ds === startStr,
+            isEnd: ds === endStr,
+            isMultiDay: startStr !== endStr
+          });
+        }
+      });
+    }
     return ev;
-  }, [vendors, ganttTasks, showVendors, showSteps, showStatus, showGantt]);
+  }, [vendors, ganttTasks, calendarEvents, showVendors, showSteps, showStatus, showGantt, showEvents]);
 
   const firstDay = new Date(month.year, month.month, 1);
   const lastDay = new Date(month.year, month.month + 1, 0);
@@ -172,6 +202,33 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
   function toggleAllVendors(val) { const m = {}; vendors.forEach(v => { m[v.id] = val; }); setShowVendors(m); }
   function toggleAllSteps(val) { const m = {}; STEPS.forEach(s => { m[s.key] = val; }); setShowSteps(m); }
   function toggleAllStatus(val) { const m = {}; ALL_STATUSES.forEach(st => { m[st] = val; }); setShowStatus(m); }
+
+  function openNewEvent() {
+    const dateStr = selectedDay ? getDateStr(selectedDay) : new Date().toISOString().slice(0, 10);
+    setEditingEvent({ id: gid(), title: "", date: dateStr, endDate: "", time: "", color: GCOL[0], description: "" });
+  }
+  function openEditEvent(eventId) {
+    const found = (calendarEvents || []).find(e => e.id === eventId);
+    if (found) setEditingEvent(JSON.parse(JSON.stringify(found)));
+  }
+  async function handleSaveEvent() {
+    if (!editingEvent.title || !editingEvent.date) { alert("Titolo e data sono obbligatori"); return; }
+    if (editingEvent.endDate && editingEvent.endDate < editingEvent.date) { alert("La data di fine non può essere precedente alla data di inizio"); return; }
+    const isNew = !(calendarEvents || []).find(e => e.id === editingEvent.id);
+    try {
+      await saveCalendarEvent(editingEvent);
+      logActivity(currentUser, isNew ? "evento_creato" : "evento_modificato", currentUser + (isNew ? " ha creato" : " ha modificato") + " l'evento \"" + editingEvent.title + "\"");
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingEvent(null);
+  }
+  async function handleDeleteEvent(eventId, title) {
+    if (!confirm("Eliminare l'evento \"" + title + "\"?")) return;
+    try {
+      await removeCalendarEvent(eventId);
+      logActivity(currentUser, "evento_eliminato", currentUser + " ha eliminato l'evento \"" + title + "\"");
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingEvent(null);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -246,6 +303,17 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
             </label>
             {!isAdmin && <p style={{ fontSize: 11, color: "#94A3B8", margin: "8px 0 0" }}>Solo l'admin può modificare i filtri.</p>}
           </div>
+
+          {/* Custom events filter */}
+          <div style={pnl}>
+            <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#334155" }}>📌 Eventi</h4>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: isAdmin ? "pointer" : "default", fontSize: 13, color: showEvents ? "#0F172A" : "#CBD5E1" }}>
+              <input type="checkbox" checked={showEvents} onChange={() => isAdmin && setShowEvents(!showEvents)} disabled={!isAdmin} style={{ accentColor: "#EC4899", cursor: isAdmin ? "pointer" : "default" }} />
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: "#EC4899", flexShrink: 0 }} />
+              <span style={{ fontWeight: 600 }}>Mostra eventi</span>
+            </label>
+            <button onClick={openNewEvent} style={{ marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#EC4899,#8B5CF6)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Nuovo evento</button>
+          </div>
         </div>
 
         {/* ── CENTER: CALENDAR GRID ── */}
@@ -276,13 +344,17 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {dayEvents.slice(0, 3).map((ev, i) => (
-                          <div key={i} title={ev.type === "slot" ? ev.vendor + " · " + ev.label + " · " + ev.status : ev.label} style={{ fontSize: 10, fontWeight: 600, padding: "2px 4px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "3px solid " + (ev.type === "slot" ? ev.barColor : ev.color), display: "flex", alignItems: "center", gap: 3, opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.5 : 1, textDecoration: ev.type === "slot" && ev.status === "Conclusa" ? "line-through" : "none" }}>
+                          <div key={i} title={ev.type === "slot" ? ev.vendor + " · " + ev.label + " · " + ev.status : ev.type === "event" ? "📌 " + ev.title + (ev.time ? " · " + ev.time : "") + (ev.description ? "\n" + ev.description : "") : ev.label} style={{ fontSize: 10, fontWeight: 600, padding: "2px 4px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "3px solid " + (ev.type === "slot" ? ev.barColor : ev.color), display: "flex", alignItems: "center", gap: 3, opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.5 : 1, textDecoration: ev.type === "slot" && ev.status === "Conclusa" ? "line-through" : "none" }}>
                             {ev.type === "slot" && <>
                               <span style={{ fontSize: 9 }}>{ev.statusIcon}</span>
                               <span style={{ width: 5, height: 5, borderRadius: "50%", background: ev.stepColor, flexShrink: 0 }} />
                               <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.vendor}</span>
                             </>}
                             {ev.type === "gantt" && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.label}</span>}
+                            {ev.type === "event" && <>
+                              <span style={{ fontSize: 9 }}>📌</span>
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.time ? ev.time + " " : ""}{ev.title}</span>
+                            </>}
                           </div>
                         ))}
                         {dayEvents.length > 3 && <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, paddingLeft: 4 }}>+{dayEvents.length - 3}</span>}
@@ -298,8 +370,11 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
         {/* ── RIGHT SIDEBAR: DAY DETAIL ── */}
         <div style={{ ...pnl, flex: "1 1 260px", minWidth: 260 }}>
           {selectedDay ? <>
-            <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700 }}>{selectedDay} {MONTHS_IT[month.month]} {month.year}</h3>
-            {selectedEvents.length === 0 && <p style={{ color: "#94A3B8", fontSize: 14, textAlign: "center", padding: 20 }}>Nessuna attività.</p>}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{selectedDay} {MONTHS_IT[month.month]} {month.year}</h3>
+              <button onClick={openNewEvent} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "linear-gradient(135deg,#EC4899,#8B5CF6)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Evento</button>
+            </div>
+            {selectedEvents.length === 0 && <p style={{ color: "#94A3B8", fontSize: 14, textAlign: "center", padding: 20 }}>Nessuna attività in questo giorno.</p>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {selectedEvents.map((ev, i) => <div key={i} style={{ padding: "12px 14px", borderRadius: 10, background: ev.bg, borderLeft: "4px solid " + (ev.type === "slot" ? ev.barColor : ev.color), opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.65 : 1 }}>
                 {ev.type === "slot" ? <>
@@ -312,6 +387,20 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
                     <span>{ev.label} · {ev.time}</span>
                   </div>
                   {ev.participants.length > 0 && <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>{ev.participants.map(p => <span key={p} style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 100, background: PC[p]?.bg || "#F1F5F9", color: PC[p]?.fg || "#64748B" }}>{p}</span>)}</div>}
+                </> : ev.type === "event" ? <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ev.color, display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                      <span>📌</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.title}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      <button onClick={() => openEditEvent(ev.eventId)} title="Modifica" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2, lineHeight: 1 }}>✏️</button>
+                      <button onClick={() => handleDeleteEvent(ev.eventId, ev.title)} title="Elimina" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2, lineHeight: 1 }}>🗑️</button>
+                    </div>
+                  </div>
+                  {ev.time && <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>🕐 {ev.time}</div>}
+                  {ev.description && <p style={{ fontSize: 12, color: "#475569", margin: "6px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{ev.description}</p>}
+                  {ev.isMultiDay && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4, fontStyle: "italic" }}>{ev.isStart ? "▶ Inizio" : ev.isEnd ? "■ Fine" : "━ In corso"}</div>}
                 </> : <>
                   <div style={{ fontSize: 14, fontWeight: 700, color: ev.color }}>{ev.label}</div>
                   {ev.vendor && <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{ev.vendor}</div>}
@@ -322,10 +411,12 @@ function CalendarView({ vendors, ganttTasks, isAdmin }) {
             </div>
           </> : <div style={{ textAlign: "center", padding: 20, color: "#94A3B8" }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>👈</div>
-            <p style={{ fontSize: 14, margin: 0 }}>Clicca su un giorno per il dettaglio.</p>
+            <p style={{ fontSize: 14, margin: "0 0 14px" }}>Clicca su un giorno per il dettaglio.</p>
+            <button onClick={openNewEvent} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#EC4899,#8B5CF6)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Nuovo evento</button>
           </div>}
         </div>
       </div>
+      {editingEvent && <Modal onClose={() => setEditingEvent(null)}><EventForm event={editingEvent} onChange={setEditingEvent} onSave={handleSaveEvent} onDel={(calendarEvents || []).find(e => e.id === editingEvent.id) ? () => handleDeleteEvent(editingEvent.id, editingEvent.title) : null} isNew={!(calendarEvents || []).find(e => e.id === editingEvent.id)} /></Modal>}
     </div>
   );
 }
@@ -543,6 +634,55 @@ function Scheduling({vendors,initVid,clearInit,addSlot,rmSlot,setResp}){
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function EventForm({ event, onChange, onSave, onDel, isNew }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>📌</span><span>{isNew ? "Nuovo evento" : "Modifica evento"}</span>
+      </h2>
+
+      <div>
+        <label style={lb}>Titolo *</label>
+        <input style={{ ...inp, marginTop: 6 }} placeholder="Es. Riunione team, Demo cliente, Scadenza..." value={event.title} onChange={e => onChange({ ...event, title: e.target.value })} autoFocus />
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={lb}>Data inizio *</label>
+          <input type="date" style={{ ...inp, marginTop: 6 }} value={event.date} onChange={e => onChange({ ...event, date: e.target.value })} />
+        </div>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={lb}>Data fine</label>
+          <input type="date" style={{ ...inp, marginTop: 6 }} value={event.endDate || ""} onChange={e => onChange({ ...event, endDate: e.target.value })} />
+        </div>
+        <div style={{ flex: "1 1 110px" }}>
+          <label style={lb}>Orario</label>
+          <input type="time" style={{ ...inp, marginTop: 6 }} value={event.time || ""} onChange={e => onChange({ ...event, time: e.target.value })} />
+        </div>
+      </div>
+
+      <div>
+        <label style={lb}>Colore</label>
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {GCOL.map(c => <div key={c} onClick={() => onChange({ ...event, color: c })} style={{ width: 32, height: 32, borderRadius: 8, background: c, cursor: "pointer", border: event.color === c ? "3px solid #0F172A" : "2px solid transparent", boxSizing: "border-box" }} />)}
+        </div>
+      </div>
+
+      <div>
+        <label style={lb}>Note (opzionale)</label>
+        <textarea style={{ ...inp, marginTop: 6, minHeight: 70, resize: "vertical" }} placeholder="Dettagli, link, partecipanti..." value={event.description || ""} onChange={e => onChange({ ...event, description: e.target.value })} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 6 }}>
+        <div>
+          {onDel && <button onClick={onDel} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FECACA", background: "white", color: "#DC2626", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>🗑️ Elimina</button>}
+        </div>
+        <button onClick={onSave} style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>💾 Salva</button>
+      </div>
     </div>
   );
 }
