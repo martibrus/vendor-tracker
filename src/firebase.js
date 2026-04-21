@@ -23,6 +23,11 @@ export function subscribeGantt(cb) { return onSnapshot(collection(db, "gantt_tas
 export async function saveGanttTask(t) { const { id, ...d } = t; await setDoc(doc(db, "gantt_tasks", id), d); }
 export async function removeGanttTask(id) { await deleteDoc(doc(db, "gantt_tasks", id)); }
 
+// ── CALENDAR EVENTS ──
+export function subscribeCalendarEvents(cb) { return onSnapshot(collection(db, "calendar_events"), s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); cb(a); }); }
+export async function saveCalendarEvent(e) { const { id, ...d } = e; await setDoc(doc(db, "calendar_events", id), d); }
+export async function removeCalendarEvent(id) { await deleteDoc(doc(db, "calendar_events", id)); }
+
 // ── SETTINGS ──
 export function subscribeSettings(cb) { return onSnapshot(doc(db, "settings", "tab_visibility"), s => { cb(s.exists() ? s.data() : { vendors: true, gantt: true, calendar: true, timeline: true, slots: true }); }); }
 export async function saveSettings(d) { await setDoc(doc(db, "settings", "tab_visibility"), d); }
