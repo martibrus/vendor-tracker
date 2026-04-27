@@ -28,7 +28,7 @@ function timeAgo(iso){const diff=Date.now()-new Date(iso).getTime();const m=Math
 const lb={fontSize:12,fontWeight:600,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.5px"};
 const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:14,outline:"none",fontFamily:"inherit",background:"white",width:"100%",boxSizing:"border-box"};
 const pnl={background:"white",borderRadius:14,padding:20,border:"1px solid #E2E8F0"};
-const ACTION_ICONS={"preferenza":"🗳️","vendor_creato":"➕","vendor_modificato":"✏️","vendor_eliminato":"🗑️","slot_aggiunto":"📅","slot_rimosso":"❌","disponibilita_aggiunta":"🕐","disponibilita_rimossa":"🕐","gantt_creato":"📐","gantt_modificato":"📐","gantt_eliminato":"🗑️","tab_modificati":"⚙️","login":"🔑","evento_creato":"📌","evento_modificato":"📌","evento_eliminato":"🗑️"};
+const ACTION_ICONS={"preferenza":"🗳️","vendor_creato":"➕","vendor_modificato":"✏️","vendor_eliminato":"🗑️","slot_aggiunto":"📅","slot_modificato":"✏️","slot_rimosso":"❌","disponibilita_aggiunta":"🕐","disponibilita_rimossa":"🕐","gantt_creato":"📐","gantt_modificato":"📐","gantt_eliminato":"🗑️","tab_modificati":"⚙️","login":"🔑","evento_creato":"📌","evento_modificato":"📌","evento_eliminato":"🗑️"};
 const STATUS_ICONS = { "Conclusa": "✅", "Programmata": "📅", "Slot da confermare": "🔵", "Da Programmare": "⏳", "Non necessaria": "➖" };
 const ALL_STATUSES = ["Conclusa", "Programmata", "Slot da confermare", "Da Programmare", "Non necessaria"];
 
@@ -96,6 +96,8 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
   const [month, setMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
   const [selectedDay, setSelectedDay] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [editingSlot, setEditingSlot] = useState(null);
+  const [editingGantt, setEditingGantt] = useState(null);
   // Filter states — admin controls what's visible
   const [showVendors, setShowVendors] = useState(() => {
     const m = {}; vendors.forEach(v => { m[v.id] = true; }); return m;
@@ -134,6 +136,8 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
         ev.push({
           date: s.date,
           type: "slot",
+          vendorId: v.id,
+          slotId: s.id,
           vendor: v.name,
           label: step?.short || s.step,
           stepKey: s.step,
@@ -145,7 +149,8 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
           time: s.time,
           status,
           statusIcon: STATUS_ICONS[status] || "",
-          participants: v[s.step]?.participants || []
+          participants: v[s.step]?.participants || [],
+          notes: v[s.step]?.notes || ""
         });
       });
     });
@@ -154,7 +159,7 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
         if (!t.start || !t.end) return;
         const s = new Date(t.start), e = new Date(t.end);
         for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-          ev.push({ date: d.toISOString().slice(0, 10), type: "gantt", label: t.name, vendor: t.vendor || "", color: t.color || "#6366F1", bg: t.color ? t.color + "22" : "#EEF2FF", assignee: t.assignee || "", isStart: d.toISOString().slice(0, 10) === t.start, isEnd: d.toISOString().slice(0, 10) === t.end });
+          ev.push({ date: d.toISOString().slice(0, 10), type: "gantt", taskId: t.id, label: t.name, vendor: t.vendor || "", color: t.color || "#6366F1", bg: t.color ? t.color + "22" : "#EEF2FF", assignee: t.assignee || "", isStart: d.toISOString().slice(0, 10) === t.start, isEnd: d.toISOString().slice(0, 10) === t.end });
         }
       });
     }
@@ -228,6 +233,85 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
       logActivity(currentUser, "evento_eliminato", currentUser + " ha eliminato l'evento \"" + title + "\"");
     } catch (e) { alert("Errore: " + e.message); return; }
     setEditingEvent(null);
+  }
+
+  // ── SLOT EDIT (admin only) ──
+  function openEditSlot(vendorId, slotId, stepKey) {
+    if (!isAdmin) return;
+    const v = vendors.find(x => x.id === vendorId);
+    if (!v) return;
+    const slot = fix(v.slots).find(s => s.id === slotId);
+    if (!slot) return;
+    setEditingSlot({
+      vendorId,
+      slotId,
+      stepKey,
+      vendorName: v.name,
+      date: slot.date || "",
+      time: slot.time || "",
+      status: v[stepKey]?.status || "Da Programmare",
+      participants: [...(v[stepKey]?.participants || [])],
+      notes: v[stepKey]?.notes || ""
+    });
+  }
+  async function handleSaveSlot() {
+    if (!editingSlot) return;
+    if (!editingSlot.date) { alert("La data è obbligatoria"); return; }
+    const v = vendors.find(x => x.id === editingSlot.vendorId);
+    if (!v) return;
+    const updated = {
+      ...v,
+      slots: fix(v.slots).map(s => s.id === editingSlot.slotId ? { ...s, date: editingSlot.date, time: editingSlot.time } : s),
+      [editingSlot.stepKey]: {
+        ...(v[editingSlot.stepKey] || {}),
+        status: editingSlot.status,
+        participants: editingSlot.participants,
+        notes: editingSlot.notes
+      }
+    };
+    try {
+      await saveVendor(updated);
+      const stepLabel = STEPS.find(s => s.key === editingSlot.stepKey)?.label || editingSlot.stepKey;
+      logActivity(currentUser, "slot_modificato", currentUser + " ha modificato slot " + v.name + " – " + stepLabel + " dal calendario");
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingSlot(null);
+  }
+  async function handleDeleteSlot() {
+    if (!editingSlot) return;
+    if (!confirm("Eliminare lo slot di " + editingSlot.vendorName + "?")) return;
+    const v = vendors.find(x => x.id === editingSlot.vendorId);
+    if (!v) return;
+    try {
+      await saveVendor({ ...v, slots: fix(v.slots).filter(s => s.id !== editingSlot.slotId) });
+      logActivity(currentUser, "slot_rimosso", currentUser + " ha rimosso slot per " + v.name + " dal calendario");
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingSlot(null);
+  }
+
+  // ── GANTT EDIT (admin only) ──
+  function openEditGantt(taskId) {
+    if (!isAdmin) return;
+    const t = ganttTasks.find(x => x.id === taskId);
+    if (t) setEditingGantt(JSON.parse(JSON.stringify(t)));
+  }
+  async function handleSaveGantt() {
+    if (!editingGantt) return;
+    if (!editingGantt.name || !editingGantt.start || !editingGantt.end) { alert("Nome, inizio e fine sono obbligatori"); return; }
+    if (editingGantt.end < editingGantt.start) { alert("La data di fine non può essere precedente a quella di inizio"); return; }
+    try {
+      await saveGanttTask(editingGantt);
+      logActivity(currentUser, "gantt_modificato", currentUser + " ha modificato attività: " + editingGantt.name);
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingGantt(null);
+  }
+  async function handleDeleteGantt() {
+    if (!editingGantt) return;
+    if (!confirm("Eliminare l'attività \"" + editingGantt.name + "\"?")) return;
+    try {
+      await removeGanttTask(editingGantt.id);
+      logActivity(currentUser, "gantt_eliminato", currentUser + " ha eliminato: " + editingGantt.name);
+    } catch (e) { alert("Errore: " + e.message); return; }
+    setEditingGantt(null);
   }
 
   return (
@@ -379,8 +463,11 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
               {selectedEvents.map((ev, i) => <div key={i} style={{ padding: "12px 14px", borderRadius: 10, background: ev.bg, borderLeft: "4px solid " + (ev.type === "slot" ? ev.barColor : ev.color), opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.65 : 1 }}>
                 {ev.type === "slot" ? <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: ev.color, textDecoration: ev.status === "Conclusa" ? "line-through" : "none" }}>{ev.vendor}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ev.color, textDecoration: ev.status === "Conclusa" ? "line-through" : "none", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{ev.vendor}</div>
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 100, background: ev.barColor, color: "white", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>{ev.statusIcon} {ev.status}</span>
+                    {isAdmin && <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      <button onClick={() => openEditSlot(ev.vendorId, ev.slotId, ev.stepKey)} title="Modifica slot" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2, lineHeight: 1 }}>✏️</button>
+                    </div>}
                   </div>
                   <div style={{ fontSize: 13, color: "#334155", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: ev.stepColor, flexShrink: 0 }} />
@@ -402,7 +489,10 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
                   {ev.description && <p style={{ fontSize: 12, color: "#475569", margin: "6px 0 0", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{ev.description}</p>}
                   {ev.isMultiDay && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4, fontStyle: "italic" }}>{ev.isStart ? "▶ Inizio" : ev.isEnd ? "■ Fine" : "━ In corso"}</div>}
                 </> : <>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: ev.color }}>{ev.label}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ev.color, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{ev.label}</div>
+                    {isAdmin && <button onClick={() => openEditGantt(ev.taskId)} title="Modifica attività" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2, lineHeight: 1, flexShrink: 0 }}>✏️</button>}
+                  </div>
                   {ev.vendor && <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{ev.vendor}</div>}
                   {ev.assignee && <div style={{ fontSize: 12, marginTop: 4, color: PC[ev.assignee]?.fg || "#64748B", fontWeight: 600 }}>{ev.assignee}</div>}
                   <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>{ev.isStart ? "▶ Inizio" : ev.isEnd ? "■ Fine" : "━ In corso"}</div>
@@ -417,6 +507,8 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
         </div>
       </div>
       {editingEvent && <Modal onClose={() => setEditingEvent(null)}><EventForm event={editingEvent} onChange={setEditingEvent} onSave={handleSaveEvent} onDel={(calendarEvents || []).find(e => e.id === editingEvent.id) ? () => handleDeleteEvent(editingEvent.id, editingEvent.title) : null} isNew={!(calendarEvents || []).find(e => e.id === editingEvent.id)} /></Modal>}
+      {editingSlot && <Modal onClose={() => setEditingSlot(null)}><SlotEditForm slot={editingSlot} onChange={setEditingSlot} onSave={handleSaveSlot} onDel={handleDeleteSlot} /></Modal>}
+      {editingGantt && <Modal onClose={() => setEditingGantt(null)}><GanttEditForm task={editingGantt} onChange={setEditingGantt} onSave={handleSaveGantt} onDel={handleDeleteGantt} vendors={vendors} /></Modal>}
     </div>
   );
 }
@@ -681,6 +773,127 @@ function EventForm({ event, onChange, onSave, onDel, isNew }) {
         <div>
           {onDel && <button onClick={onDel} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FECACA", background: "white", color: "#DC2626", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>🗑️ Elimina</button>}
         </div>
+        <button onClick={onSave} style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>💾 Salva</button>
+      </div>
+    </div>
+  );
+}
+
+function SlotEditForm({ slot, onChange, onSave, onDel }) {
+  const stepDef = STEPS.find(s => s.key === slot.stepKey);
+  const allowed = stepDef?.sts || STATUSES2;
+  function toggleP(p) {
+    const cur = slot.participants || [];
+    const next = cur.includes(p) ? cur.filter(x => x !== p) : [...cur, p];
+    onChange({ ...slot, participants: next });
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>✏️</span><span>Modifica slot</span>
+      </h2>
+      <div style={{ padding: "10px 14px", background: stepDef?.bg || "#F1F5F9", borderRadius: 10, borderLeft: "4px solid " + (stepDef?.color || "#64748B") }}>
+        <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{slot.vendorName}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: stepDef?.color || "#0F172A" }}>{stepDef?.label || slot.stepKey}</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 160px" }}>
+          <label style={lb}>Data *</label>
+          <input type="date" style={{ ...inp, marginTop: 6 }} value={slot.date} onChange={e => onChange({ ...slot, date: e.target.value })} />
+        </div>
+        <div style={{ flex: "1 1 120px" }}>
+          <label style={lb}>Orario</label>
+          <input type="time" style={{ ...inp, marginTop: 6 }} value={slot.time} onChange={e => onChange({ ...slot, time: e.target.value })} />
+        </div>
+      </div>
+
+      <div>
+        <label style={lb}>Stato</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+          {allowed.map(st => {
+            const sc = SC[st];
+            const sel = slot.status === st;
+            return (
+              <button key={st} onClick={() => onChange({ ...slot, status: st })} style={{ padding: "7px 12px", borderRadius: 100, border: "2px solid " + (sel ? sc.bar : "transparent"), background: sel ? sc.bar : sc.bg, color: sel ? "white" : sc.fg, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                <span>{STATUS_ICONS[st]}</span><span>{st}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label style={lb}>Partecipanti</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+          {PARTS.map(p => {
+            const sel = (slot.participants || []).includes(p);
+            return (
+              <button key={p} onClick={() => toggleP(p)} style={{ padding: "6px 12px", borderRadius: 100, border: "2px solid " + (sel ? PC[p].fg : "transparent"), background: sel ? PC[p].bg : "#F8FAFC", color: sel ? PC[p].fg : "#94A3B8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                {p}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label style={lb}>Note (opzionale)</label>
+        <textarea style={{ ...inp, marginTop: 6, minHeight: 70, resize: "vertical" }} placeholder="Note sullo step..." value={slot.notes || ""} onChange={e => onChange({ ...slot, notes: e.target.value })} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 6 }}>
+        <button onClick={onDel} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FECACA", background: "white", color: "#DC2626", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>🗑️ Elimina slot</button>
+        <button onClick={onSave} style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>💾 Salva</button>
+      </div>
+    </div>
+  );
+}
+
+function GanttEditForm({ task, onChange, onSave, onDel, vendors }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>📐</span><span>Modifica attività Gantt</span>
+      </h2>
+      <div>
+        <label style={lb}>Nome *</label>
+        <input style={{ ...inp, marginTop: 6 }} placeholder="Nome attività" value={task.name || ""} onChange={e => onChange({ ...task, name: e.target.value })} autoFocus />
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 160px" }}>
+          <label style={lb}>Vendor</label>
+          <select style={{ ...inp, marginTop: 6 }} value={task.vendor || ""} onChange={e => onChange({ ...task, vendor: e.target.value })}>
+            <option value="">— Vendor —</option>
+            {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "1 1 120px" }}>
+          <label style={lb}>Assegnato a</label>
+          <select style={{ ...inp, marginTop: 6 }} value={task.assignee || ""} onChange={e => onChange({ ...task, assignee: e.target.value })}>
+            <option value="">—</option>
+            {PARTS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={lb}>Inizio *</label>
+          <input type="date" style={{ ...inp, marginTop: 6 }} value={task.start || ""} onChange={e => onChange({ ...task, start: e.target.value })} />
+        </div>
+        <div style={{ flex: "1 1 140px" }}>
+          <label style={lb}>Fine *</label>
+          <input type="date" style={{ ...inp, marginTop: 6 }} value={task.end || ""} onChange={e => onChange({ ...task, end: e.target.value })} />
+        </div>
+      </div>
+      <div>
+        <label style={lb}>Colore</label>
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {GCOL.map(c => <div key={c} onClick={() => onChange({ ...task, color: c })} style={{ width: 32, height: 32, borderRadius: 8, background: c, cursor: "pointer", border: task.color === c ? "3px solid #0F172A" : "2px solid transparent", boxSizing: "border-box" }} />)}
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 6 }}>
+        <button onClick={onDel} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FECACA", background: "white", color: "#DC2626", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>🗑️ Elimina</button>
         <button onClick={onSave} style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#3B82F6,#6366F1)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>💾 Salva</button>
       </div>
     </div>
