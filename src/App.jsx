@@ -141,6 +141,7 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
           vendor: v.name,
           label: step?.short || s.step,
           stepKey: s.step,
+          stepTag: "S" + s.step.replace("step", ""),
           stepColor: step?.color || "#3B82F6",
           stepBg: step?.bg || "#DBEAFE",
           color: sc.fg,
@@ -421,24 +422,29 @@ function CalendarView({ vendors, ganttTasks, calendarEvents, currentUser, isAdmi
                 const isSel = selectedDay === dayNum;
                 const isWe = d >= 5;
                 return (
-                  <div key={d} onClick={() => isValid && setSelectedDay(isSel ? null : dayNum)} style={{ minHeight: 80, padding: "4px 6px", borderRight: "1px solid #F1F5F9", borderBottom: "1px solid #F1F5F9", background: isSel ? "#EFF6FF" : isWe ? "#FAFBFC" : "white", cursor: isValid ? "pointer" : "default" }}>
+                  <div key={d} onClick={() => isValid && setSelectedDay(isSel ? null : dayNum)} style={{ minHeight: 120, padding: "4px 6px", borderRight: "1px solid #F1F5F9", borderBottom: "1px solid #F1F5F9", background: isSel ? "#EFF6FF" : isWe ? "#FAFBFC" : "white", cursor: isValid ? "pointer" : "default" }}>
                     {isValid && <>
                       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
                         <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "white" : isWe ? "#CBD5E1" : "#334155", background: isToday ? "#3B82F6" : "transparent", width: isToday ? 26 : "auto", height: isToday ? 26 : "auto", borderRadius: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</span>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {dayEvents.slice(0, 3).map((ev, i) => (
-                          <div key={i} title={ev.type === "slot" ? ev.vendor + " · " + ev.label + " · " + ev.status : ev.type === "event" ? "📌 " + ev.title + (ev.time ? " · " + ev.time : "") + (ev.description ? "\n" + ev.description : "") : ev.label} style={{ fontSize: 10, fontWeight: 600, padding: "2px 4px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "3px solid " + (ev.type === "slot" ? ev.barColor : ev.color), display: "flex", alignItems: "center", gap: 3, opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.5 : 1, textDecoration: ev.type === "slot" && ev.status === "Conclusa" ? "line-through" : "none" }}>
+                          <div key={i} title={ev.type === "slot" ? ev.vendor + " · " + ev.label + " · " + ev.status + (ev.participants.length > 0 ? " · " + ev.participants.join(", ") : "") : ev.type === "event" ? "📌 " + ev.title + (ev.time ? " · " + ev.time : "") + (ev.description ? "\n" + ev.description : "") : ev.label} style={{ fontSize: 10, fontWeight: 600, padding: "3px 5px", borderRadius: 4, background: ev.bg, color: ev.color, overflow: "hidden", borderLeft: "3px solid " + (ev.type === "slot" ? ev.barColor : ev.color), display: "flex", flexDirection: "column", gap: 2, opacity: ev.type === "slot" && ev.status === "Non necessaria" ? 0.5 : 1, textDecoration: ev.type === "slot" && ev.status === "Conclusa" ? "line-through" : "none" }}>
                             {ev.type === "slot" && <>
-                              <span style={{ fontSize: 9 }}>{ev.statusIcon}</span>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: ev.stepColor, flexShrink: 0 }} />
-                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.vendor}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 3, overflow: "hidden" }}>
+                                <span style={{ fontSize: 9, flexShrink: 0 }}>{ev.statusIcon}</span>
+                                <span style={{ fontSize: 8, fontWeight: 800, padding: "0 4px", borderRadius: 3, background: ev.stepColor, color: "white", flexShrink: 0, lineHeight: 1.5, letterSpacing: "0.3px" }}>{ev.stepTag}</span>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{ev.vendor}</span>
+                              </div>
+                              {ev.participants.length > 0 && <div style={{ display: "flex", gap: 2, paddingLeft: 14, overflow: "hidden", flexWrap: "nowrap" }}>
+                                {ev.participants.map(p => <span key={p} style={{ fontSize: 8, fontWeight: 700, padding: "0 4px", borderRadius: 3, background: PC[p]?.bg || "#F1F5F9", color: PC[p]?.fg || "#64748B", flexShrink: 0, lineHeight: 1.5, letterSpacing: "0.3px" }}>{p}</span>)}
+                              </div>}
                             </>}
-                            {ev.type === "gantt" && <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.label}</span>}
-                            {ev.type === "event" && <>
-                              <span style={{ fontSize: 9 }}>📌</span>
-                              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ev.time ? ev.time + " " : ""}{ev.title}</span>
-                            </>}
+                            {ev.type === "gantt" && <div style={{ display: "flex", alignItems: "center", gap: 3, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.label}</span></div>}
+                            {ev.type === "event" && <div style={{ display: "flex", alignItems: "center", gap: 3, overflow: "hidden" }}>
+                              <span style={{ fontSize: 9, flexShrink: 0 }}>📌</span>
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.time ? ev.time + " " : ""}{ev.title}</span>
+                            </div>}
                           </div>
                         ))}
                         {dayEvents.length > 3 && <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600, paddingLeft: 4 }}>+{dayEvents.length - 3}</span>}
